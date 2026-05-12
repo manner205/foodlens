@@ -128,7 +128,27 @@ FoodLens/
 6. `types/models.ts`: User 인터페이스에 nickname 필드 추가
 
 #### 미완료 / 다음에 할 것
-- [ ] iPhone Expo Go 실제 테스트 (회사 네트워크 제한으로 미진행)
+- [x] iPhone Expo Go 실제 테스트 — 로그인 성공 확인 (Day 2에서 완료)
+- [ ] 로그인 → 프로필 설정 → 사진 촬영 → AI 분석 전체 플로우 테스트
+- [ ] 에러/예외 케이스 테스트 (오프라인, API 실패 등)
+- [ ] 앱 아이콘/스플래시 커스터마이징
+- [ ] 필요시 UI 다듬기
+
+---
+
+### 2026-05-13 (Day 2) — 새 PC 환경 세팅 + iPhone 로그인 버그 수정
+
+#### 완료 항목
+- [x] 새 PC(Windows)에서 GitHub 클론으로 개발 환경 재구성
+  - `git clone https://github.com/manner205/foodlens.git`
+  - `npm install` (737 패키지)
+  - `.env` 파일 수동 생성 (git에 포함 안 됨)
+- [x] iPhone Expo Go 로그인 버그 수정
+  - **원인**: `app/login.tsx` 비밀번호 `TextInput`에 `autoCapitalize="none"`, `autoCorrect={false}` 누락
+  - **증상**: 맥북 웹에서는 로그인 되는데 iPhone에서 "이메일 또는 비밀번호가 올바르지 않습니다" 오류
+  - **수정**: 비밀번호 필드에 두 옵션 추가 → iPhone Expo Go 로그인 정상 동작 확인
+
+#### 미완료 / 다음에 할 것
 - [ ] 로그인 → 프로필 설정 → 사진 촬영 → AI 분석 전체 플로우 테스트
 - [ ] 에러/예외 케이스 테스트 (오프라인, API 실패 등)
 - [ ] 앱 아이콘/스플래시 커스터마이징

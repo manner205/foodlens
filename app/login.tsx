@@ -73,6 +73,8 @@ export default function LoginScreen() {
             onChangeText={(t) => { setPassword(t); setErrorMessage(''); }}
             placeholder="비밀번호"
             secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
           />
           <TouchableOpacity
             style={[styles.loginButton, loading && { opacity: 0.6 }]}
