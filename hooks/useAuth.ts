@@ -90,15 +90,24 @@ export function useAuth() {
   };
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id) throw new Error('로그인이 필요합니다.');
+
+    // upsert: 행이 없으면 생성, 있으면 업데이트
     const { data, error } = await supabase
       .from('fl_users')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', session.user.id)
+      .upsert({
+        id: session.user.id,
+        email: session.user.email || '',
+        ...updates,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('updateProfile 오류:', JSON.stringify(error));
+      throw error;
+    }
     if (data) setUser(data);
   }, [session]);
 

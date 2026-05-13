@@ -46,17 +46,24 @@ export default function ProfileScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateProfile({
-        nickname: nickname.trim() || undefined,
-        age: parseInt(age) || undefined,
-        weight_kg: parseFloat(weightKg) || undefined,
-        height_cm: parseInt(heightCm) || undefined,
-        goal,
-        daily_calorie_goal: parseInt(dailyCalorieGoal) || undefined,
-      });
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('요청 시간 초과 (10초). 네트워크를 확인하세요.')), 10000)
+      );
+      await Promise.race([
+        updateProfile({
+          nickname: nickname.trim() || undefined,
+          age: parseInt(age) || undefined,
+          weight_kg: parseFloat(weightKg) || undefined,
+          height_cm: parseInt(heightCm) || undefined,
+          goal,
+          daily_calorie_goal: parseInt(dailyCalorieGoal) || undefined,
+        }),
+        timeout,
+      ]);
       Alert.alert('완료', '프로필이 저장되었습니다.');
     } catch (error) {
-      Alert.alert('오류', '저장에 실패했습니다.');
+      const msg = error instanceof Error ? error.message : '저장에 실패했습니다.';
+      Alert.alert('오류', msg);
     } finally {
       setSaving(false);
     }
