@@ -32,22 +32,25 @@ FoodLens/
 │   │   ├── _layout.tsx     # 탭 설정 (오늘/기록/리포트/프로필)
 │   │   ├── index.tsx       # 오늘 대시보드
 │   │   ├── history.tsx     # 날짜별 기록
-│   │   ├── reports.tsx     # 주간/월간 리포트
+│   │   ├── reports.tsx     # 기간별 리포트 (오늘/7일/30일/이번달/직접선택)
 │   │   └── profile.tsx     # 프로필 설정
 │   ├── camera/index.tsx    # 카메라/갤러리 → AI 분석
 │   ├── analysis/[id].tsx   # 분석 결과 확인/수정/저장
-│   └── guide/index.tsx     # AI 건강 가이드
+│   ├── guide/index.tsx     # AI 건강 가이드
+│   └── manual/index.tsx    # 식사 직접 입력
+├── components/
+│   └── AvatarDisplay.tsx   # 아바타 이미지 공통 컴포넌트
 ├── services/               # 외부 서비스 연동
 │   ├── supabaseClient.ts   # Supabase 클라이언트
-│   ├── imageService.ts     # 카메라/갤러리/압축/업로드
+│   ├── imageService.ts     # 카메라/갤러리/압축/업로드 + 아바타
 │   ├── geminiService.ts    # Gemini AI 분석 API
 │   ├── offlineQueue.ts     # 오프라인 큐 (AsyncStorage)
-│   └── reportService.ts    # 주간/월간 리포트 집계
+│   └── reportService.ts    # 기간별 리포트 집계 (범용 날짜범위 지원)
 ├── hooks/                  # React 커스텀 훅
-│   ├── useAuth.ts          # 인증 + 프로필 관리
+│   ├── useAuth.ts          # 인증 + 프로필 관리 + AppState 세션 갱신
 │   ├── useMealEntries.ts   # 식사 기록 CRUD
 │   └── useOfflineSync.ts   # 오프라인 자동 동기화
-├── types/models.ts         # TypeScript 타입 정의
+├── types/models.ts         # TypeScript 타입 (MealTypeStats, TopFood 등)
 ├── styles/theme.ts         # 디자인 토큰 (색상/간격/폰트)
 ├── constants/nutrition.ts  # 영양 상수 + BMR 계산
 ├── workflows/              # 단계별 설정 가이드 (6개)
@@ -148,11 +151,60 @@ FoodLens/
   - **증상**: 맥북 웹에서는 로그인 되는데 iPhone에서 "이메일 또는 비밀번호가 올바르지 않습니다" 오류
   - **수정**: 비밀번호 필드에 두 옵션 추가 → iPhone Expo Go 로그인 정상 동작 확인
 
+---
+
+### 2026-05-13 (Day 3) — 리포트 전면 개편 + 건강 가이드 기간 선택 + 버그 수정
+
+#### 완료 항목
+
+**리포트 화면 (`reports.tsx`) 5가지 기능 추가**
+- [x] 기록 현황 스트릭 — 연속 기록일, 기록 유지율(기록일/경과일), 총 식사 수
+- [x] 영양소 비율 파이 차트 — 탄수화물/단백질/지방 비율, 권장치 대비 차이 표시
+- [x] 목표 달성 프로그레스 바 — 칼로리/단백질/탄수화물/지방/식이섬유 일 평균 vs 목표
+- [x] 식사 패턴 분석 — 아침/점심/저녁/간식 횟수 가로 바 + 평균 칼로리
+- [x] 인기 음식 TOP 5 — 기간 내 자주 먹은 음식 순위
+
+**건강 가이드 (`guide/index.tsx`) 기간 선택 UI**
+- [x] 한끼/오늘/7일/30일/이번달/직접선택 pill 버튼 방식
+- [x] 직접선택: 화살표 버튼으로 시작일/종료일 조정
+- [x] 한끼: 날짜 + 식사 유형(아침/점심/저녁/간식) 선택, 데이터 있는 유형 표시
+
+**타입/서비스 확장**
+- [x] `types/models.ts`: `MealTypeStats`, `TopFood` 인터페이스 추가; `WeeklyReport`/`MonthlyReport`에 신규 필드 추가
+- [x] `reportService.ts`: `computeStreak()`, `aggregateMealTypeStats()`, `aggregateTopFoods()` 헬퍼 추가
+
+**버그 수정**
+- [x] 아바타 업로드 RLS 오류 (`new row violates row-level security policy`) 수정
+  - **원인**: Storage `upsert: true` 옵션이 내부적으로 UPDATE 정책을 요구하는데 INSERT 정책만 존재
+  - **수정**: `imageService.ts`에서 기존 파일 DELETE 후 새로 INSERT하는 방식으로 변경
+  - Supabase Storage에 DELETE 정책 추가 필요 (SQL: `auth.uid()::text = (storage.foldername(name))[1]`)
+
+---
+
+### 2026-05-14 (Day 4) — 리포트 기간 선택 UI 개편 + 파이차트 짤림 수정 + 백그라운드 세션 버그 수정
+
+#### 완료 항목
+
+**리포트 기간 선택 UI 개편 (`reports.tsx`)**
+- [x] 주간/월간 탭 → 오늘/7일/30일/이번달/직접선택 pill 버튼 방식으로 교체 (건강 가이드와 동일)
+- [x] 직접선택 시 시작일/종료일 화살표 조정 + 조회 버튼
+- [x] `reportService.ts`에 `getReportByDateRange(userId, startDate, endDate, elapsedDays, totalPeriodDays)` 범용 함수 추가
+
+**파이차트 짤림 수정 (`reports.tsx`)**
+- [x] 기존: `flexDirection: 'row'` 레이아웃에서 `width={SW/2 - 8}` → 차트 좌측 클리핑 발생
+- [x] 수정: 파이차트를 카드 전체 너비(`CHART_W`)로 표시 후 아래에 레전드 3개 가로 나열 (세로 스택)
+
+**백그라운드 장시간 후 null user 버그 수정**
+- [x] **현상**: iPhone을 몇 시간 두었다 앱 복귀 시 "안녕하세요" + 0 데이터 표시 (강제 종료 후 재실행하면 정상)
+- [x] **원인**: iOS가 백그라운드에서 JS 스레드를 일시 중단 → Supabase 토큰 갱신 타이머 멈춤 → 1시간 TTL 액세스 토큰 만료 → 포그라운드 복귀 시 API 401 에러
+- [x] **수정 1** (`useAuth.ts`): AppState `'active'` 이벤트에서 `supabase.auth.getSession()` 강제 호출 → Supabase가 refresh token으로 자동 재발급
+- [x] **수정 2** (`index.tsx`): AppState `'active'` + `user?.id` 존재 확인 후 대시보드 데이터 재로드 (`loadDataRef` + `userIdRef` 패턴으로 stale closure 방지)
+
 #### 미완료 / 다음에 할 것
-- [ ] 로그인 → 프로필 설정 → 사진 촬영 → AI 분석 전체 플로우 테스트
-- [ ] 에러/예외 케이스 테스트 (오프라인, API 실패 등)
-- [ ] 앱 아이콘/스플래시 커스터마이징
-- [ ] 필요시 UI 다듬기
+- [ ] 수동 식사 입력 화면(`manual/index.tsx`) UI 완성 및 연동
+- [ ] 앱 아이콘/스플래시 실기기 확인
+- [ ] 오프라인 → 온라인 전환 시 동기화 엣지케이스 테스트
+- [ ] TestFlight 배포 (필요 시)
 
 ---
 
@@ -221,3 +273,6 @@ EXPO_PUBLIC_GEMINI_API_KEY=(Google AI Studio에서 발급한 키)
 - 오프라인: AsyncStorage 큐에 저장 → 앱 foreground 복귀 시 자동 sync
 - 이미지: expo-image-manipulator로 800px 리사이즈 + 0.3 quality 압축
 - 차트: react-native-chart-kit (Expo Go 호환)
+- PieChart 주의: `hasLegend={false}` + 전체 너비 사용 시 클리핑 없음. 좁은 너비(`SW/2`)에서는 세로 스택 레이아웃 필요
+- iOS 백그라운드: JS 스레드 일시 중단으로 Supabase 토큰 갱신 타이머 멈춤 → AppState `'active'` 이벤트에서 `getSession()` 강제 호출로 해결
+- Supabase Storage upsert: `upsert: true` 옵션은 UPDATE 정책 필요 → DELETE 후 INSERT 방식 권장
