@@ -68,7 +68,7 @@ export function extractMealTime(exif?: Record<string, any>): string {
   return new Date().toISOString();
 }
 
-// Supabase Storage에 이미지 업로드
+// Supabase Storage에 이미지 업로드 — 파일 경로 반환 (private 버킷)
 export async function uploadImage(
   localUri: string,
   userId: string,
@@ -80,15 +80,33 @@ export async function uploadImage(
 
   const { error } = await supabase.storage
     .from('meal-photos')
-    .upload(filePath, decode(base64), {
-      contentType: 'image/jpeg',
-    });
+    .upload(filePath, decode(base64), { contentType: 'image/jpeg' });
 
   if (error) throw new Error(`이미지 업로드 실패: ${error.message}`);
 
-  const { data } = supabase.storage
-    .from('meal-photos')
-    .getPublicUrl(filePath);
+  // private 버킷: 파일 경로를 저장하고 표시 시점에 signed URL 생성
+  return filePath;
+}
 
-  return data.publicUrl;
+// 저장된 photo_url(파일 경로 또는 구 공개 URL)에서 signed URL 생성
+export async function getSignedPhotoUrl(photoUrl: string): Promise<string | null> {
+  if (!photoUrl) return null;
+
+  // 구형 데이터: full public URL → 파일 경로 추출
+  const publicPrefix = '/storage/v1/object/public/meal-photos/';
+  const signedPrefix = '/storage/v1/object/sign/meal-photos/';
+  let filePath = photoUrl;
+
+  if (photoUrl.includes(publicPrefix)) {
+    filePath = photoUrl.split(publicPrefix)[1];
+  } else if (photoUrl.includes(signedPrefix)) {
+    filePath = photoUrl.split(signedPrefix)[1].split('?')[0];
+  }
+
+  const { data, error } = await supabase.storage
+    .from('meal-photos')
+    .createSignedUrl(filePath, 3600); // 1시간 유효
+
+  if (error || !data) return null;
+  return data.signedUrl;
 }

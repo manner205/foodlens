@@ -5,7 +5,7 @@ import { useAuthContext } from '@/app/_layout';
 import { Text, View } from '@/components/Themed';
 import { MEAL_TYPE_LABELS, MEAL_TYPES } from '@/constants/nutrition';
 import { useMealEntries } from '@/hooks/useMealEntries';
-import { uploadImage } from '@/services/imageService';
+import { getSignedPhotoUrl, uploadImage } from '@/services/imageService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { MealEntry, NutritionData } from '@/types/models';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -66,7 +66,10 @@ export default function AnalysisScreen() {
           setFoodItems(meal.food_items?.map(f => [f.name, f.quantity, f.unit].filter(Boolean).join(' ')).join(', ') || '');
           setMealType(meal.meal_type);
           setMealTime(meal.meal_time);
-          if (meal.photo_url) setImageUri(meal.photo_url);
+          if (meal.photo_url) {
+            const signed = await getSignedPhotoUrl(meal.photo_url);
+            setImageUri(signed);
+          }
         }
       } catch (error) {
         Alert.alert('오류', '기록을 불러오는데 실패했습니다.');
@@ -140,7 +143,18 @@ export default function AnalysisScreen() {
   return (
     <ScrollView style={styles.container}>
       {/* 이미지 미리보기 */}
-      {imageUri && <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />}
+      {imageUri ? (
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.preview}
+          resizeMode="contain"
+          onError={() => setImageUri(null)}
+        />
+      ) : isExisting ? (
+        <View style={[styles.preview, styles.noImage]}>
+          <Text style={styles.noImageText}>사진 없음</Text>
+        </View>
+      ) : null}
 
       {/* 신뢰도 */}
       {confidenceScore > 0 && (
@@ -234,6 +248,8 @@ function NutritionInput({ label, value, onChange, color }: {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.md },
   preview: { width: '100%', height: 300, borderRadius: BorderRadius.lg, marginBottom: Spacing.md, backgroundColor: '#000' },
+  noImage: { backgroundColor: Colors.surface, justifyContent: 'center', alignItems: 'center' },
+  noImageText: { color: Colors.textSecondary, fontSize: FontSize.md },
   confidenceBadge: { backgroundColor: Colors.primaryLight, padding: Spacing.sm, borderRadius: BorderRadius.sm, marginBottom: Spacing.sm, alignItems: 'center' },
   confidenceText: { fontSize: FontSize.sm, fontWeight: '600' },
   warningText: { fontSize: FontSize.sm, color: Colors.accentDark, marginBottom: 4 },
