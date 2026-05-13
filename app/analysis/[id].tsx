@@ -9,7 +9,7 @@ import { getSignedPhotoUrl, uploadImage } from '@/services/imageService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { MealEntry, NutritionData } from '@/types/models';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 
@@ -31,6 +31,14 @@ export default function AnalysisScreen() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [isExisting, setIsExisting] = useState(false);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
 
   useEffect(() => {
     loadAnalysisData();
@@ -142,6 +150,16 @@ export default function AnalysisScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      <Stack.Screen
+        options={{
+          title: '분석 결과',
+          headerLeft: () => (
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <Text style={styles.backButtonText}>‹ 뒤로</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
       {/* 이미지 미리보기 */}
       {imageUri ? (
         <Image
@@ -268,4 +286,6 @@ const styles = StyleSheet.create({
   nutritionInput: { width: 100, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.sm, padding: Spacing.xs, fontSize: FontSize.md, textAlign: 'right', backgroundColor: Colors.surface },
   saveButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.md, padding: Spacing.md, alignItems: 'center', marginTop: Spacing.lg },
   saveButtonText: { color: '#fff', fontSize: FontSize.lg, fontWeight: '600' },
+  backButton: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+  backButtonText: { color: Colors.primary, fontSize: FontSize.lg },
 });
