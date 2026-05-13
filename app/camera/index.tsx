@@ -8,6 +8,8 @@ import { compressImage, extractMealTime, imageToBase64, pickFromGallery, takePho
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, TouchableOpacity } from 'react-native';
@@ -77,7 +79,46 @@ export default function CameraScreen() {
     }
   };
 
+  const openSettings = () => Linking.openSettings();
+
   const handleCamera = async () => {
+    const { status } = await ImagePicker.getCameraPermissionsAsync();
+
+    if (status === 'denied') {
+      Alert.alert(
+        '카메라 접근 권한 필요',
+        '음식 사진 촬영을 위해 카메라 접근이 필요합니다.\n설정에서 권한을 허용해주세요.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정 열기', onPress: openSettings },
+        ]
+      );
+      return;
+    }
+
+    if (status === 'undetermined') {
+      Alert.alert(
+        '카메라 접근 권한',
+        'FoodLens가 음식 사진을 찍으려면 카메라 접근 권한이 필요합니다. 허용하시겠어요?',
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '허용', onPress: async () => {
+              try {
+                const result = await takePhoto();
+                if (!result.canceled && result.assets[0]) {
+                  await handleImageSelected(result.assets[0].uri, result.assets[0].exif as Record<string, any>);
+                }
+              } catch (error: any) {
+                Alert.alert('오류', error.message);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     try {
       const result = await takePhoto();
       if (!result.canceled && result.assets[0]) {
@@ -89,6 +130,43 @@ export default function CameraScreen() {
   };
 
   const handleGallery = async () => {
+    const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+
+    if (status === 'denied') {
+      Alert.alert(
+        '갤러리 접근 권한 필요',
+        '저장된 사진을 선택하려면 갤러리 접근 권한이 필요합니다.\n설정에서 권한을 허용해주세요.',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설정 열기', onPress: openSettings },
+        ]
+      );
+      return;
+    }
+
+    if (status === 'undetermined') {
+      Alert.alert(
+        '갤러리 접근 권한',
+        'FoodLens가 식사 사진을 선택하려면 갤러리 접근 권한이 필요합니다. 허용하시겠어요?',
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '허용', onPress: async () => {
+              try {
+                const result = await pickFromGallery();
+                if (!result.canceled && result.assets[0]) {
+                  await handleImageSelected(result.assets[0].uri, result.assets[0].exif as Record<string, any>);
+                }
+              } catch (error: any) {
+                Alert.alert('오류', error.message);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
     try {
       const result = await pickFromGallery();
       if (!result.canceled && result.assets[0]) {
