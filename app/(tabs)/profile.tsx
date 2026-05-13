@@ -65,7 +65,11 @@ export default function ProfileScreen() {
   const handleSignOut = () => {
     Alert.alert('로그아웃', '정말 로그아웃 할까요?', [
       { text: '취소', style: 'cancel' },
-      { text: '로그아웃', style: 'destructive', onPress: signOut },
+      {
+        text: '로그아웃', style: 'destructive', onPress: async () => {
+          try { await signOut(); } catch (e) { /* 로컬 상태는 이미 해제됨 */ }
+        }
+      },
     ]);
   };
 

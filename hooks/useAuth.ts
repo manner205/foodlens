@@ -20,7 +20,7 @@ export function useAuth() {
       clearTimeout(timeout);
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user.id);
+        fetchUserProfile(session.user.id, session.user.email ?? undefined);
       } else {
         setLoading(false);
       }
@@ -29,12 +29,11 @@ export function useAuth() {
       setLoading(false);
     });
 
-    // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        if (session?.user) {
-          await fetchUserProfile(session.user.id);
+      async (_event, newSession) => {
+        setSession(newSession);
+        if (newSession?.user) {
+          await fetchUserProfile(newSession.user.id, newSession.user.email ?? undefined);
         } else {
           setUser(null);
           setLoading(false);
@@ -45,9 +44,9 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
+  // email 파라미터로 직접 받아 stale session 클로저 버그 방지
+  const fetchUserProfile = async (userId: string, email?: string) => {
     try {
-      // 2026-05-12: 테이블명 fl_users로 변경 (travel-manager 프로젝트 공유)
       const { data, error } = await supabase
         .from('fl_users')
         .select('*')
@@ -55,19 +54,17 @@ export function useAuth() {
         .single();
 
       if (error && error.code === 'PGRST116') {
-        // 프로필이 없으면 기본 프로필 생성
         const { data: newUser, error: insertError } = await supabase
           .from('fl_users')
-          .insert({
-            id: userId,
-            email: session?.user?.email || '',
-          })
+          .insert({ id: userId, email: email || '' })
           .select()
           .single();
 
-        if (!insertError) setUser(newUser);
+        if (!insertError && newUser) setUser(newUser);
       } else if (data) {
         setUser(data);
+      } else if (error) {
+        console.error('프로필 조회 오류:', error);
       }
     } catch (error) {
       console.error('프로필 조회 실패:', error);
@@ -82,8 +79,14 @@ export function useAuth() {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    // 로컬 상태 먼저 초기화 — 네트워크 실패해도 로그아웃 보장
+    setSession(null);
+    setUser(null);
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('서버 로그아웃 실패 (로컬 세션은 해제됨):', e);
+    }
   };
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
