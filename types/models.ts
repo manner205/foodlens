@@ -4,7 +4,8 @@
 export interface User {
   id: string;
   email: string;
-  nickname?: string; // 2026-05-12: 이름/별명 필드 추가
+  nickname?: string;
+  avatar_url?: string;
   age?: number;
   weight_kg?: number;
   height_cm?: number;
@@ -59,12 +60,30 @@ export interface DailyNutritionSummary {
   meal_count: number;
 }
 
+export interface MealTypeStats {
+  breakfast: { count: number; avg_calories: number };
+  lunch: { count: number; avg_calories: number };
+  dinner: { count: number; avg_calories: number };
+  snack: { count: number; avg_calories: number };
+}
+
+export interface TopFood {
+  name: string;
+  count: number;
+}
+
 export interface WeeklyReport {
   start_date: string;
   end_date: string;
   daily_data: DailyNutritionSummary[];
   averages: NutritionData;
   total_meals: number;
+  streak: number;
+  record_days: number;
+  elapsed_days: number;
+  total_period_days: number;
+  meal_type_stats: MealTypeStats;
+  top_foods: TopFood[];
 }
 
 export interface MonthlyReport {
@@ -73,6 +92,12 @@ export interface MonthlyReport {
   daily_data: DailyNutritionSummary[];
   averages: NutritionData;
   total_meals: number;
+  streak: number;
+  record_days: number;
+  elapsed_days: number;
+  total_period_days: number;
+  meal_type_stats: MealTypeStats;
+  top_foods: TopFood[];
 }
 
 export interface QueuedMeal {
@@ -87,4 +112,14 @@ export interface HealthGuideResult {
   summary: string;
   recommendations: string[];
   warnings?: string[];
+}
+
+export interface DayGuideData {
+  date: string;
+  calories: number;
+  protein_g: number;
+  carbohydrates_g: number;
+  fat_g: number;
+  meal_count: number;
+  food_names: string[];
 }

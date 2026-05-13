@@ -39,12 +39,14 @@ export async function getQueueCount(): Promise<number> {
 }
 
 // 네트워크 상태 확인
+// isInternetReachable은 iOS에서 null로 올 수 있어 isConnected만 체크
 export async function isOnline(): Promise<boolean> {
   try {
     const state = await Network.getNetworkStateAsync();
-    return state.isConnected === true && state.isInternetReachable === true;
+    // isInternetReachable이 null인 경우(판별 전)에는 연결된 것으로 간주
+    return state.isConnected === true && state.isInternetReachable !== false;
   } catch {
-    return false;
+    return true; // 판별 실패 시 온라인으로 간주 (Supabase가 직접 에러 반환)
   }
 }
 

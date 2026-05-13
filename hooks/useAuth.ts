@@ -5,6 +5,7 @@ import { supabase } from '@/services/supabaseClient';
 import { User } from '@/types/models';
 import { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -44,6 +45,24 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // 앱이 포그라운드로 돌아올 때 세션 강제 갱신
+  // iOS가 백그라운드에서 토큰 갱신 타이머를 멈추기 때문에 필요
+  useEffect(() => {
+    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        const { data: { session: fresh } } = await supabase.auth.getSession();
+        if (fresh?.user) {
+          setSession(fresh);
+          fetchUserProfile(fresh.user.id, fresh.user.email ?? undefined);
+        } else if (!fresh) {
+          setSession(null);
+          setUser(null);
+        }
+      }
+    });
+    return () => appStateSub.remove();
+  }, []);
+
   // email 파라미터로 직접 받아 stale session 클로저 버그 방지
   const fetchUserProfile = async (userId: string, email?: string) => {
     try {
@@ -72,6 +91,14 @@ export function useAuth() {
       setLoading(false);
     }
   };
+
+  // 프로필만 다시 로드 (세션은 유지한 채 user가 null일 때 호출)
+  const refetchProfile = useCallback(async () => {
+    const { data: { session: current } } = await supabase.auth.getSession();
+    if (current?.user) {
+      await fetchUserProfile(current.user.id, current.user.email ?? undefined);
+    }
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -118,6 +145,7 @@ export function useAuth() {
     signIn,
     signOut,
     updateProfile,
+    refetchProfile,
     isAuthenticated: !!session,
   };
 }

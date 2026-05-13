@@ -3,6 +3,7 @@
 // [기존 템플릿 코드 주석 처리 — 원본: Tab One 화면]
 
 import { useAuthContext } from '@/app/_layout';
+import { AvatarDisplay } from '@/components/AvatarDisplay';
 import { Text, View } from '@/components/Themed';
 import { MEAL_TYPE_LABELS } from '@/constants/nutrition';
 import { useMealEntries } from '@/hooks/useMealEntries';
@@ -12,14 +13,13 @@ import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { DailyNutritionSummary } from '@/types/models';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuthContext();
   const { meals, loading, fetchTodayMeals } = useMealEntries(user?.id);
-  const { pendingCount, syncing } = useOfflineSync();
   const [summary, setSummary] = useState<DailyNutritionSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -30,9 +30,34 @@ export default function DashboardScreen() {
     setSummary(todaySummary);
   }, [user?.id, fetchTodayMeals]);
 
+  const { pendingCount, syncing } = useOfflineSync(loadData);
+
+  // loadDataRef: useOfflineSync 콜백 및 AppState 핸들러에서 항상 최신 버전 사용
+  const loadDataRef = useRef(loadData);
+  useEffect(() => { loadDataRef.current = loadData; });
+
+  // userIdRef: AppState 핸들러 클로저가 user?.id 최신값 참조
+  const userIdRef = useRef(user?.id);
+  useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
+
+  // 앱이 포그라운드로 돌아올 때 데이터 재로드
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && userIdRef.current) {
+        loadDataRef.current();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // user?.id 가 null→정의됨으로 전환될 때 (비동기 인증) 데이터 로드 보장
+  const prevUserIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (user?.id !== prevUserIdRef.current) {
+      prevUserIdRef.current = user?.id;
+      if (user?.id) loadDataRef.current();
+    }
+  }, [user?.id]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -60,7 +85,19 @@ export default function DashboardScreen() {
 
       {/* 칼로리 요약 카드 */}
       <View style={styles.calorieCard}>
-        <Text style={styles.cardTitle}>{user?.nickname ? `${user.nickname} 님의 오늘의 칼로리` : '오늘의 칼로리'}</Text>
+        <View style={styles.cardHeader}>
+          <AvatarDisplay avatarUrl={user?.avatar_url} size={48} />
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardGreeting}>
+              {user?.nickname ? `${user.nickname} 님, 안녕하세요 👋` : '안녕하세요 👋'}
+            </Text>
+            <Text style={styles.cardDate}>
+              {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.calorieDivider} />
+        <Text style={styles.cardTitle}>오늘의 칼로리</Text>
         <View style={styles.calorieCircle}>
           <Text style={styles.calorieNumber}>{caloriesCurrent}</Text>
           <Text style={styles.calorieUnit}>/ {calorieGoal} kcal</Text>
@@ -82,7 +119,13 @@ export default function DashboardScreen() {
       <View style={styles.mealsSection}>
         <Text style={styles.sectionTitle}>오늘 식사 ({meals.length}끼)</Text>
         {meals.length === 0 && !loading && (
-          <Text style={styles.emptyText}>아직 기록된 식사가 없습니다</Text>
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>아직 기록된 식사가 없습니다</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadData}>
+              <FontAwesome name="refresh" size={14} color={Colors.primary} />
+              <Text style={styles.retryText}>  새로고침</Text>
+            </TouchableOpacity>
+          </View>
         )}
         {meals.map((meal) => (
           <TouchableOpacity
@@ -139,7 +182,12 @@ const styles = StyleSheet.create({
   syncBadge: { backgroundColor: Colors.warning, padding: Spacing.sm, borderRadius: BorderRadius.sm, marginBottom: Spacing.sm, alignItems: 'center' },
   syncText: { fontSize: FontSize.sm, fontWeight: '600' },
   calorieCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, padding: Spacing.lg, alignItems: 'center', marginBottom: Spacing.md, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  cardTitle: { fontSize: FontSize.lg, fontWeight: '600', color: Colors.text, marginBottom: Spacing.sm },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginBottom: Spacing.sm },
+  cardHeaderText: { flex: 1, marginLeft: Spacing.sm },
+  cardGreeting: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  cardDate: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  calorieDivider: { height: 1, backgroundColor: Colors.border, alignSelf: 'stretch', marginBottom: Spacing.sm },
+  cardTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary, marginBottom: Spacing.xs },
   calorieCircle: { alignItems: 'center', marginVertical: Spacing.md },
   calorieNumber: { fontSize: FontSize.xxl, fontWeight: 'bold', color: Colors.calories },
   calorieUnit: { fontSize: FontSize.sm, color: Colors.textSecondary },
@@ -153,7 +201,10 @@ const styles = StyleSheet.create({
   nutrientUnit: { fontSize: FontSize.xs, color: Colors.textSecondary },
   mealsSection: { marginBottom: Spacing.md },
   sectionTitle: { fontSize: FontSize.lg, fontWeight: '600', color: Colors.text, marginBottom: Spacing.sm },
-  emptyText: { fontSize: FontSize.md, color: Colors.textLight, textAlign: 'center', paddingVertical: Spacing.xl },
+  emptyState: { alignItems: 'center', paddingVertical: Spacing.xl },
+  emptyText: { fontSize: FontSize.md, color: Colors.textLight, textAlign: 'center' },
+  retryButton: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs },
+  retryText: { fontSize: FontSize.sm, color: Colors.primary },
   mealCard: { flexDirection: 'row', backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.sm, alignItems: 'center', elevation: 1 },
   mealTypeBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: BorderRadius.sm },
   mealTypeText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '600' },

@@ -88,6 +88,28 @@ export async function uploadImage(
   return filePath;
 }
 
+// 아바타 이미지 업로드 — {userId}/avatar.jpg (기존 파일 삭제 후 재업로드)
+export async function uploadAvatar(localUri: string, userId: string): Promise<string> {
+  const result = await ImageManipulator.manipulateAsync(
+    localUri,
+    [{ resize: { width: 300, height: 300 } }],
+    { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+  );
+  if (!result.base64) throw new Error('이미지 변환 실패');
+
+  const filePath = `${userId}/avatar.jpg`;
+
+  // 기존 파일 삭제 후 INSERT (upsert의 UPDATE 정책 없이도 동작)
+  await supabase.storage.from('meal-photos').remove([filePath]);
+
+  const { error } = await supabase.storage
+    .from('meal-photos')
+    .upload(filePath, decode(result.base64), { contentType: 'image/jpeg' });
+
+  if (error) throw new Error(`아바타 업로드 실패: ${error.message}`);
+  return filePath;
+}
+
 // 저장된 photo_url(파일 경로 또는 구 공개 URL)에서 signed URL 생성
 export async function getSignedPhotoUrl(photoUrl: string): Promise<string | null> {
   if (!photoUrl) return null;

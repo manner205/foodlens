@@ -6,6 +6,12 @@ import { supabase } from '@/services/supabaseClient';
 import { MealEntry } from '@/types/models';
 import { useCallback, useState } from 'react';
 
+// "YYYY-MM-DD" 문자열을 로컬 자정 Date로 파싱 (new Date("YYYY-MM-DD")는 UTC로 파싱되어 KST에서 날짜가 어긋남)
+function localMidnight(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export function useMealEntries(userId: string | undefined) {
   const [meals, setMeals] = useState<MealEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -31,8 +37,8 @@ export function useMealEntries(userId: string | undefined) {
 
       if (error) throw error;
       setMeals(data || []);
-    } catch (error) {
-      console.error('식사 목록 조회 실패:', error);
+    } catch (err: any) {
+      console.error('오늘 식사 조회 실패:', err);
     } finally {
       setLoading(false);
     }
@@ -43,7 +49,7 @@ export function useMealEntries(userId: string | undefined) {
     if (!userId) return;
     setLoading(true);
     try {
-      const startOfDay = new Date(date);
+      const startOfDay = localMidnight(date);
       const endOfDay = new Date(startOfDay);
       endOfDay.setDate(endOfDay.getDate() + 1);
 
@@ -57,8 +63,8 @@ export function useMealEntries(userId: string | undefined) {
 
       if (error) throw error;
       setMeals(data || []);
-    } catch (error) {
-      console.error('식사 목록 조회 실패:', error);
+    } catch (err: any) {
+      console.error('날짜별 식사 조회 실패:', err);
     } finally {
       setLoading(false);
     }
@@ -114,8 +120,8 @@ export function useMealEntries(userId: string | undefined) {
         .from('fl_meal_entries')
         .select('*')
         .eq('user_id', userId)
-        .gte('meal_time', new Date(startDate).toISOString())
-        .lt('meal_time', new Date(endDate).toISOString())
+        .gte('meal_time', localMidnight(startDate).toISOString())
+        .lt('meal_time', localMidnight(endDate).toISOString())
         .order('meal_time', { ascending: true });
       if (error) throw error;
       return data || [];

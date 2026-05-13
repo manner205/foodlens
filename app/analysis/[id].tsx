@@ -21,6 +21,7 @@ export default function AnalysisScreen() {
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [originalUri, setOriginalUri] = useState<string | null>(null);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
   const [nutrition, setNutrition] = useState<NutritionData>({
     calories: 0, protein_g: 0, carbohydrates_g: 0, fat_g: 0, fiber_g: 0,
   });
@@ -76,7 +77,11 @@ export default function AnalysisScreen() {
           setMealTime(meal.meal_time);
           if (meal.photo_url) {
             const signed = await getSignedPhotoUrl(meal.photo_url);
-            setImageUri(signed);
+            if (signed) {
+              setImageUri(signed);
+            } else {
+              setPhotoUploadFailed(true); // photo_url은 있지만 signed URL 생성 실패
+            }
           }
         }
       } catch (error) {
@@ -109,9 +114,13 @@ export default function AnalysisScreen() {
       if (originalUri && !isExisting) {
         try {
           photoUrl = await uploadImage(originalUri, user.id, id || 'unknown');
-        } catch {
-          // 업로드 실패해도 기록은 저장 (오프라인 가능성)
-          console.warn('이미지 업로드 실패, 기록만 저장');
+        } catch (uploadErr: any) {
+          // 업로드 실패 시 유저에게 알림 (영양 데이터는 정상 저장됨)
+          Alert.alert(
+            '사진 저장 실패',
+            `사진 업로드에 실패했습니다. 영양 데이터는 정상 저장됩니다.\n(${uploadErr?.message || '네트워크 오류'})`,
+            [{ text: '확인' }]
+          );
         }
       }
 
@@ -166,11 +175,13 @@ export default function AnalysisScreen() {
           source={{ uri: imageUri }}
           style={styles.preview}
           resizeMode="contain"
-          onError={() => setImageUri(null)}
+          onError={() => { setImageUri(null); setPhotoUploadFailed(true); }}
         />
       ) : isExisting ? (
         <View style={[styles.preview, styles.noImage]}>
-          <Text style={styles.noImageText}>사진 없음</Text>
+          <Text style={styles.noImageText}>
+            {photoUploadFailed ? '사진을 불러올 수 없습니다' : '사진 없음 (직접 입력)'}
+          </Text>
         </View>
       ) : null}
 

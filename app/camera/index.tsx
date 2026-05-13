@@ -203,6 +203,12 @@ export default function CameraScreen() {
         <Text style={styles.optionText}>갤러리 선택</Text>
         <Text style={styles.optionDesc}>이전에 찍어둔 사진 선택</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity style={styles.optionButton} onPress={() => router.push('/manual')}>
+        <FontAwesome name="pencil" size={32} color={Colors.success} />
+        <Text style={styles.optionText}>직접 입력</Text>
+        <Text style={styles.optionDesc}>사진 없이 칼로리/음식을 직접 입력</Text>
+      </TouchableOpacity>
     </View>
   );
 }

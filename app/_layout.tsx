@@ -28,6 +28,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
+  refetchProfile: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -38,6 +39,7 @@ export const AuthContext = createContext<AuthContextType>({
   signIn: async () => {},
   signOut: async () => {},
   updateProfile: async () => {},
+  refetchProfile: async () => {},
   isAuthenticated: false,
 });
 
@@ -98,6 +100,7 @@ function RootLayoutNav() {
         <Stack.Screen name="camera/index" options={{ title: '식사 촬영', headerBackTitle: '뒤로' }} />
         <Stack.Screen name="analysis/[id]" options={{ title: '분석 결과', headerBackTitle: '뒤로' }} />
         <Stack.Screen name="guide/index" options={{ title: '건강 가이드', headerBackTitle: '뒤로' }} />
+        <Stack.Screen name="manual/index" options={{ title: '식사 직접 입력', headerBackTitle: '뒤로' }} />
       </Stack>
     </ThemeProvider>
   );
