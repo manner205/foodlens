@@ -63,7 +63,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 // 갤러리 타일 — 자체적으로 signed URL 로드
-function MealPhotoTile({ meal, onPress }: { meal: MealEntry; onPress: () => void }) {
+function MealPhotoTile({ meal, onPress, onLongPress }: { meal: MealEntry; onPress: () => void; onLongPress?: () => void }) {
   const [signedUri, setSignedUri] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,7 +73,7 @@ function MealPhotoTile({ meal, onPress }: { meal: MealEntry; onPress: () => void
   }, [meal.photo_url]);
 
   return (
-    <TouchableOpacity style={styles.photoTile} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity style={styles.photoTile} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.85}>
       {signedUri ? (
         <Image source={{ uri: signedUri }} style={styles.photoTileImage} resizeMode="cover" />
       ) : (
@@ -112,7 +112,7 @@ function MealThumbnail({ photoUrl, mealType }: { photoUrl?: string; mealType: Me
 }
 
 // 갤러리 그리드 섹션 (날짜별)
-function GallerySection({ group, onPressItem }: { group: DayGroup; onPressItem: (meal: MealEntry) => void }) {
+function GallerySection({ group, onPressItem, onLongPressItem }: { group: DayGroup; onPressItem: (meal: MealEntry) => void; onLongPressItem?: (meal: MealEntry) => void }) {
   const date = new Date(group.date + 'T12:00:00');
   const label = date.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   const rows = chunkArray(group.meals, 3);
@@ -126,7 +126,7 @@ function GallerySection({ group, onPressItem }: { group: DayGroup; onPressItem: 
       {rows.map((row, i) => (
         <View key={i} style={styles.galleryRow}>
           {row.map(meal => (
-            <MealPhotoTile key={meal.id} meal={meal} onPress={() => onPressItem(meal)} />
+            <MealPhotoTile key={meal.id} meal={meal} onPress={() => onPressItem(meal)} onLongPress={onLongPressItem ? () => onLongPressItem(meal) : undefined} />
           ))}
           {/* 마지막 줄 빈칸 채우기 */}
           {row.length < 3 && Array(3 - row.length).fill(null).map((_, j) => (
@@ -203,7 +203,7 @@ export default function HistoryScreen() {
     }
   };
 
-  const handleDelete = useCallback((meal: MealEntry, reload: () => void) => {
+  const handleDelete = useCallback((meal: MealEntry, onDeleted?: () => void) => {
     Alert.alert(
       '삭제 확인',
       `${MEAL_TYPE_LABELS[meal.meal_type]} 기록을 삭제할까요?`,
@@ -215,7 +215,7 @@ export default function HistoryScreen() {
           onPress: async () => {
             try {
               await deleteMeal(meal.id);
-              reload();
+              onDeleted?.();
             } catch {
               Alert.alert('오류', '삭제에 실패했습니다.');
             }
@@ -226,6 +226,11 @@ export default function HistoryScreen() {
   }, [deleteMeal]);
 
   const reloadDaily = useCallback(() => fetchMealsByDate(dateStr), [fetchMealsByDate, dateStr]);
+
+  // 주간/월간에서 삭제 후 로컬 상태 즉시 반영 (재조회 없이)
+  const removeFromRange = useCallback((mealId: string) => {
+    setRangedMeals(prev => prev.filter(m => m.id !== mealId));
+  }, []);
 
   const activeMeals = viewMode === 'daily' ? meals : rangedMeals;
   const totalCalories = activeMeals.reduce((sum, m) => sum + (m.nutrition?.calories || 0), 0);
@@ -282,6 +287,9 @@ export default function HistoryScreen() {
             <Text style={styles.compactTime}>
               {new Date(meal.meal_time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
             </Text>
+            <TouchableOpacity onPress={() => handleDelete(meal, () => removeFromRange(meal.id))} style={styles.deleteButton}>
+              <FontAwesome name="trash-o" size={15} color={Colors.error} />
+            </TouchableOpacity>
           </TouchableOpacity>
         ))}
       </View>
@@ -318,7 +326,10 @@ export default function HistoryScreen() {
 
       {/* 합계 + 갤러리/리스트 토글 */}
       <View style={styles.summaryRow}>
-        <Text style={styles.summaryText}>{summaryText}</Text>
+        <Text style={styles.summaryText}>
+          {summaryText}
+          {displayMode === 'gallery' ? '  · 길게 누르면 삭제' : ''}
+        </Text>
         <TouchableOpacity
           style={styles.displayToggle}
           onPress={() => setDisplayMode(d => d === 'list' ? 'gallery' : 'list')}
@@ -347,7 +358,11 @@ export default function HistoryScreen() {
               keyExtractor={item => item.id}
               numColumns={3}
               renderItem={({ item }) => (
-                <MealPhotoTile meal={item} onPress={() => router.push(`/analysis/${item.id}`)} />
+                <MealPhotoTile
+                  meal={item}
+                  onPress={() => router.push(`/analysis/${item.id}`)}
+                  onLongPress={() => handleDelete(item, reloadDaily)}
+                />
               )}
               contentContainerStyle={styles.galleryContainer}
             />
@@ -362,6 +377,7 @@ export default function HistoryScreen() {
                   key={group.date}
                   group={group}
                   onPressItem={meal => router.push(`/analysis/${meal.id}`)}
+                  onLongPressItem={meal => handleDelete(meal, () => removeFromRange(meal.id))}
                 />
               ))
             )}

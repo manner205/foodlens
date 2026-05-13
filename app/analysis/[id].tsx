@@ -9,6 +9,7 @@ import { getSignedPhotoUrl, uploadImage } from '@/services/imageService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { MealEntry, NutritionData } from '@/types/models';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
@@ -17,7 +18,7 @@ export default function AnalysisScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuthContext();
-  const { saveMeal, updateMeal, fetchMealById } = useMealEntries(user?.id);
+  const { saveMeal, updateMeal, fetchMealById, deleteMeal } = useMealEntries(user?.id);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [originalUri, setOriginalUri] = useState<string | null>(null);
@@ -103,6 +104,30 @@ export default function AnalysisScreen() {
     setNutrition(prev => ({ ...prev, [key]: parseFloat(value) || 0 }));
   };
 
+  const handleDelete = () => {
+    if (!id || !isExisting) return;
+    Alert.alert(
+      '삭제 확인',
+      '이 식사 기록을 삭제하시겠습니까?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteMeal(id);
+              if (router.canGoBack()) router.back();
+              else router.replace('/');
+            } catch {
+              Alert.alert('오류', '삭제에 실패했습니다.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleSave = async () => {
     if (!user?.id) return;
     setSaving(true);
@@ -167,6 +192,11 @@ export default function AnalysisScreen() {
               <Text style={styles.backButtonText}>‹ 뒤로</Text>
             </TouchableOpacity>
           ),
+          headerRight: isExisting ? () => (
+            <TouchableOpacity onPress={handleDelete} style={styles.headerDeleteBtn}>
+              <FontAwesome name="trash-o" size={20} color={Colors.error} />
+            </TouchableOpacity>
+          ) : undefined,
         }}
       />
       {/* 이미지 미리보기 */}
@@ -299,4 +329,5 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontSize: FontSize.lg, fontWeight: '600' },
   backButton: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
   backButtonText: { color: Colors.primary, fontSize: FontSize.lg },
+  headerDeleteBtn: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
 });
