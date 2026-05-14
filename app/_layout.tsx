@@ -25,6 +25,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  lastRefreshTime: number;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
@@ -36,6 +37,7 @@ export const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
   loading: true,
+  lastRefreshTime: 0,
   signIn: async () => {},
   signOut: async () => {},
   updateProfile: async () => {},

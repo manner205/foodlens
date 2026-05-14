@@ -18,29 +18,36 @@ import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user, session } = useAuthContext();
+  const { user, lastRefreshTime } = useAuthContext();
   const { meals, loading, fetchTodayMeals } = useMealEntries(user?.id);
   const [summary, setSummary] = useState<DailyNutritionSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!user?.id) return;
-    await fetchTodayMeals();
-    const todaySummary = await getTodaySummary(user.id);
-    setSummary(todaySummary);
+    console.log('[Dashboard] loadData 시작 / userId=', user.id);
+    try {
+      await fetchTodayMeals();
+      const todaySummary = await getTodaySummary(user.id);
+      setSummary(todaySummary);
+      console.log('[Dashboard] loadData 완료');
+    } catch (err) {
+      console.error('[Dashboard] loadData 오류:', err);
+    }
   }, [user?.id, fetchTodayMeals]);
 
   const { pendingCount, syncing } = useOfflineSync(loadData);
 
-  // session.access_token이 바뀔 때 데이터 로드:
-  // - 콜드 스타트: null → 토큰값 (최초 인증 완료)
-  // - 포그라운드 복귀: 만료 토큰 → 갱신 토큰 (useAuth.ts AppState가 갱신 완료 후 session 업데이트)
-  // user?.id도 dep에 포함해 로그인 직후(user 세팅 타이밍)도 커버
+  // 데이터 로드 트리거:
+  // - user?.id 변화: 콜드 스타트에서 인증 완료 시 (null → userId)
+  // - lastRefreshTime 변화: 포그라운드 복귀 시 useAuth가 getSession+fetchProfile
+  //   완료 후 업데이트 → 토큰 만료 여부와 무관하게 항상 재로드 보장
   useEffect(() => {
-    if (user?.id && session?.access_token) {
+    if (user?.id) {
+      console.log('[Dashboard] 데이터 로드 트리거 / userId=', user.id, '/ lastRefreshTime=', lastRefreshTime);
       loadData();
     }
-  }, [session?.access_token, user?.id, loadData]);
+  }, [user?.id, lastRefreshTime, loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
