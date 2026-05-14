@@ -48,7 +48,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Image source={require('../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('../assets/images/foodlens-logo.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.title}>FoodLens</Text>
         <Text style={styles.subtitle}>AI 식단 분석 & 기록</Text>
 
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
   title: { fontSize: FontSize.title, fontWeight: 'bold', color: Colors.primary, marginTop: Spacing.md },
   subtitle: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },
-  logo: { width: 140, height: 140, marginBottom: Spacing.sm },
+  logo: { width: 160, height: 160, marginBottom: Spacing.sm, overflow: 'visible' },
   form: { width: '100%' },
   input: { borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: Spacing.md, fontSize: FontSize.md, backgroundColor: Colors.surface, marginBottom: Spacing.md },
   errorText: { color: Colors.error, fontSize: FontSize.sm, textAlign: 'center', marginBottom: Spacing.md, backgroundColor: '#FFF0F0', padding: Spacing.sm, borderRadius: BorderRadius.sm },
