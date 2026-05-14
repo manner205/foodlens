@@ -136,11 +136,12 @@ export default function AnalysisScreen() {
       let photoUrl: string | undefined;
 
       // 이미지 업로드
-      if (originalUri && !isExisting) {
+      // imageUri: 카메라/갤러리 선택 시 이미 compressImage()된 file:// URI
+      // originalUri(ph:// or content://)를 쓰면 풀해상도 디코딩으로 무한 대기 발생
+      if (imageUri && !isExisting) {
         try {
-          photoUrl = await uploadImage(originalUri, user.id, id || 'unknown');
+          photoUrl = await uploadImage(imageUri, user.id, id || 'unknown');
         } catch (uploadErr: any) {
-          // 업로드 실패 시 유저에게 알림 (영양 데이터는 정상 저장됨)
           Alert.alert(
             '사진 저장 실패',
             `사진 업로드에 실패했습니다. 영양 데이터는 정상 저장됩니다.\n(${uploadErr?.message || '네트워크 오류'})`,
