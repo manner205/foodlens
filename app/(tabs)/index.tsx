@@ -13,12 +13,12 @@ import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { DailyNutritionSummary } from '@/types/models';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, session } = useAuthContext();
   const { meals, loading, fetchTodayMeals } = useMealEntries(user?.id);
   const [summary, setSummary] = useState<DailyNutritionSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,32 +32,15 @@ export default function DashboardScreen() {
 
   const { pendingCount, syncing } = useOfflineSync(loadData);
 
-  // loadDataRef: useOfflineSync 콜백 및 AppState 핸들러에서 항상 최신 버전 사용
-  const loadDataRef = useRef(loadData);
-  useEffect(() => { loadDataRef.current = loadData; });
-
-  // userIdRef: AppState 핸들러 클로저가 user?.id 최신값 참조
-  const userIdRef = useRef(user?.id);
-  useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
-
-  // 앱이 포그라운드로 돌아올 때 데이터 재로드
+  // session.access_token이 바뀔 때 데이터 로드:
+  // - 콜드 스타트: null → 토큰값 (최초 인증 완료)
+  // - 포그라운드 복귀: 만료 토큰 → 갱신 토큰 (useAuth.ts AppState가 갱신 완료 후 session 업데이트)
+  // user?.id도 dep에 포함해 로그인 직후(user 세팅 타이밍)도 커버
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && userIdRef.current) {
-        loadDataRef.current();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  // user?.id 가 null→정의됨으로 전환될 때 (비동기 인증) 데이터 로드 보장
-  const prevUserIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (user?.id !== prevUserIdRef.current) {
-      prevUserIdRef.current = user?.id;
-      if (user?.id) loadDataRef.current();
+    if (user?.id && session?.access_token) {
+      loadData();
     }
-  }, [user?.id]);
+  }, [session?.access_token, user?.id, loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
