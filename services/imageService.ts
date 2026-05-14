@@ -110,25 +110,73 @@ export async function uploadAvatar(localUri: string, userId: string): Promise<st
   return filePath;
 }
 
-// 저장된 photo_url(파일 경로 또는 구 공개 URL)에서 signed URL 생성
-export async function getSignedPhotoUrl(photoUrl: string): Promise<string | null> {
-  if (!photoUrl) return null;
+// signed URL 인메모리 캐시: filePath → { url, expiresAt(ms) }
+// 같은 세션에서 동일 이미지 재요청 시 API 호출 없이 즉시 반환
+const _signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 
-  // 구형 데이터: full public URL → 파일 경로 추출
+function extractFilePath(photoUrl: string): string {
   const publicPrefix = '/storage/v1/object/public/meal-photos/';
   const signedPrefix = '/storage/v1/object/sign/meal-photos/';
-  let filePath = photoUrl;
+  if (photoUrl.includes(publicPrefix)) return photoUrl.split(publicPrefix)[1];
+  if (photoUrl.includes(signedPrefix)) return photoUrl.split(signedPrefix)[1].split('?')[0];
+  return photoUrl;
+}
 
-  if (photoUrl.includes(publicPrefix)) {
-    filePath = photoUrl.split(publicPrefix)[1];
-  } else if (photoUrl.includes(signedPrefix)) {
-    filePath = photoUrl.split(signedPrefix)[1].split('?')[0];
-  }
+// 저장된 photo_url(파일 경로 또는 구 공개 URL)에서 signed URL 생성 (캐시 포함)
+export async function getSignedPhotoUrl(photoUrl: string): Promise<string | null> {
+  if (!photoUrl) return null;
+  const filePath = extractFilePath(photoUrl);
+
+  // 캐시 히트: 만료 60초 전까지 재사용
+  const cached = _signedUrlCache.get(filePath);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.url;
 
   const { data, error } = await supabase.storage
     .from('meal-photos')
-    .createSignedUrl(filePath, 3600); // 1시간 유효
+    .createSignedUrl(filePath, 3600);
 
   if (error || !data) return null;
+  _signedUrlCache.set(filePath, { url: data.signedUrl, expiresAt: Date.now() + 3_600_000 });
   return data.signedUrl;
+}
+
+// 여러 이미지 URL을 한 번의 API 호출로 일괄 취득 (갤러리 뷰 N→1 최적화)
+export async function getSignedPhotoUrlsBatch(
+  photoUrls: string[]
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const toFetch: string[] = [];
+  const pathToOriginal: Record<string, string> = {};
+
+  for (const photoUrl of photoUrls) {
+    if (!photoUrl) continue;
+    const filePath = extractFilePath(photoUrl);
+    pathToOriginal[filePath] = photoUrl;
+
+    const cached = _signedUrlCache.get(filePath);
+    if (cached && cached.expiresAt > Date.now() + 60_000) {
+      result[photoUrl] = cached.url;
+    } else {
+      toFetch.push(filePath);
+    }
+  }
+
+  if (toFetch.length > 0) {
+    const { data } = await supabase.storage
+      .from('meal-photos')
+      .createSignedUrls(toFetch, 3600);
+    if (data) {
+      // 응답 순서 = 요청 순서 보장
+      data.forEach((item, idx) => {
+        if (item.signedUrl) {
+          const fp = toFetch[idx];
+          _signedUrlCache.set(fp, { url: item.signedUrl, expiresAt: Date.now() + 3_600_000 });
+          const original = pathToOriginal[fp];
+          if (original) result[original] = item.signedUrl;
+        }
+      });
+    }
+  }
+
+  return result;
 }

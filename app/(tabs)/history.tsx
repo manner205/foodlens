@@ -6,7 +6,7 @@ import { useAuthContext } from '@/app/_layout';
 import { Text, View } from '@/components/Themed';
 import { MEAL_TYPE_LABELS } from '@/constants/nutrition';
 import { useMealEntries } from '@/hooks/useMealEntries';
-import { getSignedPhotoUrl } from '@/services/imageService';
+import { getSignedPhotoUrlsBatch } from '@/services/imageService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { MealEntry } from '@/types/models';
 import { FontAwesome } from '@expo/vector-icons';
@@ -62,16 +62,8 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return result;
 }
 
-// 갤러리 타일 — 자체적으로 signed URL 로드
-function MealPhotoTile({ meal, onPress, onLongPress }: { meal: MealEntry; onPress: () => void; onLongPress?: () => void }) {
-  const [signedUri, setSignedUri] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (meal.photo_url) {
-      getSignedPhotoUrl(meal.photo_url).then(url => setSignedUri(url));
-    }
-  }, [meal.photo_url]);
-
+// 갤러리 타일 — signedUri를 부모에서 주입받음 (개별 API 호출 없음)
+function MealPhotoTile({ meal, signedUri, onPress, onLongPress }: { meal: MealEntry; signedUri?: string; onPress: () => void; onLongPress?: () => void }) {
   return (
     <TouchableOpacity style={styles.photoTile} onPress={onPress} onLongPress={onLongPress} activeOpacity={0.85}>
       {signedUri ? (
@@ -91,16 +83,8 @@ function MealPhotoTile({ meal, onPress, onLongPress }: { meal: MealEntry; onPres
   );
 }
 
-// 리스트 뷰용 썸네일 — signed URL 로드
-function MealThumbnail({ photoUrl, mealType }: { photoUrl?: string; mealType: MealEntry['meal_type'] }) {
-  const [signedUri, setSignedUri] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (photoUrl) {
-      getSignedPhotoUrl(photoUrl).then(url => setSignedUri(url));
-    }
-  }, [photoUrl]);
-
+// 리스트 뷰용 썸네일 — signedUri를 부모에서 주입받음
+function MealThumbnail({ mealType, signedUri }: { mealType: MealEntry['meal_type']; signedUri?: string }) {
   if (signedUri) {
     return <Image source={{ uri: signedUri }} style={styles.mealThumbnail} resizeMode="cover" />;
   }
@@ -112,7 +96,7 @@ function MealThumbnail({ photoUrl, mealType }: { photoUrl?: string; mealType: Me
 }
 
 // 갤러리 그리드 섹션 (날짜별)
-function GallerySection({ group, onPressItem, onLongPressItem }: { group: DayGroup; onPressItem: (meal: MealEntry) => void; onLongPressItem?: (meal: MealEntry) => void }) {
+function GallerySection({ group, signedUrlMap, onPressItem, onLongPressItem }: { group: DayGroup; signedUrlMap: Record<string, string>; onPressItem: (meal: MealEntry) => void; onLongPressItem?: (meal: MealEntry) => void }) {
   const date = new Date(group.date + 'T12:00:00');
   const label = date.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
   const rows = chunkArray(group.meals, 3);
@@ -126,7 +110,7 @@ function GallerySection({ group, onPressItem, onLongPressItem }: { group: DayGro
       {rows.map((row, i) => (
         <View key={i} style={styles.galleryRow}>
           {row.map(meal => (
-            <MealPhotoTile key={meal.id} meal={meal} onPress={() => onPressItem(meal)} onLongPress={onLongPressItem ? () => onLongPressItem(meal) : undefined} />
+            <MealPhotoTile key={meal.id} meal={meal} signedUri={signedUrlMap[meal.photo_url ?? '']} onPress={() => onPressItem(meal)} onLongPress={onLongPressItem ? () => onLongPressItem(meal) : undefined} />
           ))}
           {/* 마지막 줄 빈칸 채우기 */}
           {row.length < 3 && Array(3 - row.length).fill(null).map((_, j) => (
@@ -146,6 +130,7 @@ export default function HistoryScreen() {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [rangedMeals, setRangedMeals] = useState<MealEntry[]>([]);
+  const [signedUrlMap, setSignedUrlMap] = useState<Record<string, string>>({});
 
   const dateStr = toLocalDateStr(selectedDate);
 
@@ -233,6 +218,15 @@ export default function HistoryScreen() {
   }, []);
 
   const activeMeals = viewMode === 'daily' ? meals : rangedMeals;
+
+  // activeMeals 변경 시 photo_url이 있는 항목을 한 번의 API 호출로 일괄 취득
+  useEffect(() => {
+    const urls = activeMeals.map(m => m.photo_url).filter(Boolean) as string[];
+    if (urls.length === 0) return;
+    getSignedPhotoUrlsBatch(urls).then(map => {
+      setSignedUrlMap(prev => ({ ...prev, ...map }));
+    });
+  }, [activeMeals]);
   const totalCalories = activeMeals.reduce((sum, m) => sum + (m.nutrition?.calories || 0), 0);
   const dayGroups = viewMode !== 'daily' ? groupByDate(rangedMeals) : [];
 
@@ -243,7 +237,7 @@ export default function HistoryScreen() {
   // 리스트 뷰 — 일별 카드
   const renderMeal = ({ item }: { item: MealEntry }) => (
     <TouchableOpacity style={styles.mealCard} onPress={() => router.push(`/analysis/${item.id}`)}>
-      <MealThumbnail photoUrl={item.photo_url} mealType={item.meal_type} />
+      <MealThumbnail mealType={item.meal_type} signedUri={signedUrlMap[item.photo_url ?? '']} />
       <View style={styles.mealContent}>
         <Text style={styles.mealTypeLabel}>{MEAL_TYPE_LABELS[item.meal_type]}</Text>
         <Text style={styles.mealCalories}>{item.nutrition?.calories || 0} kcal</Text>
@@ -360,6 +354,7 @@ export default function HistoryScreen() {
               renderItem={({ item }) => (
                 <MealPhotoTile
                   meal={item}
+                  signedUri={signedUrlMap[item.photo_url ?? '']}
                   onPress={() => router.push(`/analysis/${item.id}`)}
                   onLongPress={() => handleDelete(item, reloadDaily)}
                 />
@@ -376,6 +371,7 @@ export default function HistoryScreen() {
                 <GallerySection
                   key={group.date}
                   group={group}
+                  signedUrlMap={signedUrlMap}
                   onPressItem={meal => router.push(`/analysis/${meal.id}`)}
                   onLongPressItem={meal => handleDelete(meal, () => removeFromRange(meal.id))}
                 />
