@@ -4,9 +4,8 @@
 import { useAuthContext } from '@/app/_layout';
 import { Text, View } from '@/components/Themed';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
-import { FontAwesome } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 
 export default function LoginScreen() {
   const { signIn } = useAuthContext();
@@ -49,7 +48,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <FontAwesome name="cutlery" size={48} color={Colors.primary} />
+        <Image source={require('../assets/images/logo.png')} style={styles.logo} />
         <Text style={styles.title}>FoodLens</Text>
         <Text style={styles.subtitle}>AI 식단 분석 & 기록</Text>
 
@@ -96,6 +95,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.xl },
   title: { fontSize: FontSize.title, fontWeight: 'bold', color: Colors.primary, marginTop: Spacing.md },
   subtitle: { fontSize: FontSize.md, color: Colors.textSecondary, marginBottom: Spacing.xl },
+  logo: { width: 110, height: 110, borderRadius: 55, marginBottom: Spacing.sm },
   form: { width: '100%' },
   input: { borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: Spacing.md, fontSize: FontSize.md, backgroundColor: Colors.surface, marginBottom: Spacing.md },
   errorText: { color: Colors.error, fontSize: FontSize.sm, textAlign: 'center', marginBottom: Spacing.md, backgroundColor: '#FFF0F0', padding: Spacing.sm, borderRadius: BorderRadius.sm },
