@@ -5,14 +5,15 @@ import { useAuthContext } from '@/app/_layout';
 import { Text, View } from '@/components/Themed';
 import { MEAL_TYPE_LABELS, MEAL_TYPES } from '@/constants/nutrition';
 import { useMealEntries } from '@/hooks/useMealEntries';
-import { getSignedPhotoUrl, uploadImage } from '@/services/imageService';
+import { getSignedPhotoUrl, imageToBase64, uploadImage } from '@/services/imageService';
+import { reanalyzeFoodPhoto } from '@/services/geminiService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { MealEntry, NutritionData } from '@/types/models';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 
 export default function AnalysisScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,6 +34,9 @@ export default function AnalysisScreen() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [isExisting, setIsExisting] = useState(false);
+  const [showReanalysis, setShowReanalysis] = useState(false);
+  const [reanalysisHints, setReanalysisHints] = useState('');
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -102,6 +106,28 @@ export default function AnalysisScreen() {
 
   const updateNutrition = (key: keyof NutritionData, value: string) => {
     setNutrition(prev => ({ ...prev, [key]: parseFloat(value) || 0 }));
+  };
+
+  const handleReanalyze = async () => {
+    if (!imageUri || !reanalysisHints.trim()) {
+      Alert.alert('입력 필요', '음식 정보를 입력해주세요. (예: 사과 5개, 포도 한 송이)');
+      return;
+    }
+    setReanalyzing(true);
+    try {
+      const base64 = await imageToBase64(imageUri);
+      const result = await reanalyzeFoodPhoto(base64, reanalysisHints.trim());
+      setNutrition(result.nutrition);
+      setFoodItems(result.food_items?.map((f: any) => `${f.name} ${f.quantity}${f.unit}`).join(', ') || '');
+      setConfidenceScore(result.confidence_score);
+      setWarnings(result.warnings || []);
+      setShowReanalysis(false);
+      setReanalysisHints('');
+    } catch (error: any) {
+      Alert.alert('재분석 실패', error.message || '재분석에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setReanalyzing(false);
+    }
   };
 
   const handleDelete = () => {
@@ -231,6 +257,53 @@ export default function AnalysisScreen() {
         <Text key={i} style={styles.warningText}>⚠️ {w}</Text>
       ))}
 
+      {/* AI 재분석 */}
+      {!isExisting && imageUri && (
+        <View style={styles.reanalysisContainer}>
+          {!showReanalysis ? (
+            <TouchableOpacity style={styles.reanalysisButton} onPress={() => setShowReanalysis(true)}>
+              <FontAwesome name="refresh" size={14} color={Colors.primary} />
+              <Text style={styles.reanalysisButtonText}>AI 재분석 요청</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.reanalysisPanel}>
+              <Text style={styles.reanalysisTitle}>AI 재분석</Text>
+              <Text style={styles.reanalysisDesc}>
+                실제 음식명, 개수, 크기 등을 입력하면 AI가 더 정확하게 다시 분석합니다.
+              </Text>
+              <TextInput
+                style={styles.reanalysisInput}
+                value={reanalysisHints}
+                onChangeText={setReanalysisHints}
+                placeholder="예: 사과 5개, 포도 한 송이, 당근 슬라이스 3조각"
+                multiline
+                editable={!reanalyzing}
+              />
+              <View style={styles.reanalysisActions}>
+                <TouchableOpacity
+                  style={[styles.reanalysisSubmit, reanalyzing && { opacity: 0.6 }]}
+                  onPress={handleReanalyze}
+                  disabled={reanalyzing}
+                >
+                  {reanalyzing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.reanalysisSubmitText}>재분석하기</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.reanalysisCancel}
+                  onPress={() => { setShowReanalysis(false); setReanalysisHints(''); }}
+                  disabled={reanalyzing}
+                >
+                  <Text style={styles.reanalysisCancelText}>취소</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* 식사 유형 선택 */}
       <Text style={styles.label}>식사 유형</Text>
       <View style={styles.mealTypeRow}>
@@ -331,4 +404,16 @@ const styles = StyleSheet.create({
   backButton: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
   backButtonText: { color: Colors.primary, fontSize: FontSize.lg },
   headerDeleteBtn: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+  reanalysisContainer: { marginVertical: Spacing.sm },
+  reanalysisButton: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.primary },
+  reanalysisButtonText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '500' },
+  reanalysisPanel: { backgroundColor: Colors.surface, borderRadius: BorderRadius.md, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+  reanalysisTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: 4 },
+  reanalysisDesc: { fontSize: FontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  reanalysisInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.sm, padding: Spacing.sm, fontSize: FontSize.md, backgroundColor: Colors.background, minHeight: 70, marginBottom: Spacing.sm },
+  reanalysisActions: { flexDirection: 'row', gap: Spacing.sm },
+  reanalysisSubmit: { flex: 1, backgroundColor: Colors.primary, borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center' },
+  reanalysisSubmitText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '600' },
+  reanalysisCancel: { paddingHorizontal: Spacing.md, padding: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.border, alignItems: 'center' },
+  reanalysisCancelText: { fontSize: FontSize.sm, color: Colors.textSecondary },
 });

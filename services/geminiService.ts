@@ -128,6 +128,72 @@ function parseGeminiResponse(text: string): FoodAnalysisResult {
   };
 }
 
+// 힌트 기반 재분석 (사용자가 음식명/개수 등을 알려주면 더 정확하게 재분석)
+export async function reanalyzeFoodPhoto(base64Image: string, hints: string): Promise<FoodAnalysisResult> {
+  const prompt = `당신은 전문 영양사 AI입니다. 이 음식 사진을 재분석하고 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트를 추가하지 마세요.
+
+사용자가 다음 정보를 제공했습니다 (이 정보를 최우선으로 참고하세요):
+"${hints}"
+
+위 정보를 바탕으로 사진을 다시 분석해 정확한 영양 정보를 계산하세요.
+
+{
+  "food_items": [
+    {"name": "음식 이름", "quantity": "추정량", "unit": "g/ml/개/컵 등"}
+  ],
+  "nutrition": {
+    "calories": 숫자,
+    "protein_g": 숫자,
+    "carbohydrates_g": 숫자,
+    "fat_g": 숫자,
+    "fiber_g": 숫자
+  },
+  "warnings": ["불확실한 부분이 있으면 경고 메시지"]
+}
+
+규칙:
+- 사용자가 알려준 음식명과 개수를 최우선으로 사용
+- 한국 음식에 특히 정확하게 분석
+- 포션 크기는 사용자 힌트 기반으로 추정
+- 여러 음식이 보이면 전체 합산 영양소 제공`;
+
+  const response = await fetchWithTimeout(`${GEMINI_VISION_URL}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+            { text: prompt },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 2048,
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API 오류 (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts;
+  const text = parts?.find((p: any) => p.text)?.text;
+
+  if (!text) {
+    throw new Error('Gemini API 응답이 비어있습니다.');
+  }
+
+  return parseGeminiResponse(text);
+}
+
 // 건강 가이드 AI 조언 요청
 export async function getHealthGuide(
   user: User,

@@ -9,7 +9,9 @@ export interface User {
   age?: number;
   weight_kg?: number;
   height_cm?: number;
+  gender?: 'male' | 'female';
   goal?: 'lose' | 'maintain' | 'gain';
+  target_weight_kg?: number;
   daily_calorie_goal?: number;
   created_at?: string;
   updated_at?: string;

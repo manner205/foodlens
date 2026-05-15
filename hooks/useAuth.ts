@@ -146,21 +146,19 @@ export function useAuth() {
   const updateProfile = useCallback(async (updates: Partial<User>) => {
     if (!session?.user?.id) throw new Error('로그인이 필요합니다.');
 
-    // upsert: 행이 없으면 생성, 있으면 업데이트
     const { data, error } = await supabase
       .from('fl_users')
-      .upsert({
-        id: session.user.id,
-        email: session.user.email || '',
+      .update({
         ...updates,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' })
+      })
+      .eq('id', session.user.id)
       .select()
       .single();
 
     if (error) {
       console.error('updateProfile 오류:', JSON.stringify(error));
-      throw error;
+      throw new Error(`저장 실패: ${error.message} (${error.code})`);
     }
     if (data) setUser(data);
   }, [session]);

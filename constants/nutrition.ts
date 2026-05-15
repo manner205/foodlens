@@ -46,6 +46,51 @@ export function calculateDailyCalories(
   return Math.round(tdee * GOAL_MULTIPLIER[goal]);
 }
 
+export interface CalorieBreakdown {
+  bmr: number;
+  tdee: number;
+  current_tdee: number;
+  result: number;
+  isMale: boolean;
+  current_weight_kg: number;
+  target_weight_kg?: number;
+  calc_weight_kg: number;
+  height_cm: number;
+  age: number;
+  goal: 'lose' | 'maintain' | 'gain';
+}
+
+// 목표 체중 기반 칼로리 계산
+// - 유지: 현재 체중 TDEE
+// - 감량/증량: 목표 체중 TDEE (목표 체중 수준으로 먹으면 자연스럽게 수렴)
+export function calculateDailyCaloriesWithBreakdown(
+  current_weight_kg: number,
+  height_cm: number,
+  age: number,
+  goal: 'lose' | 'maintain' | 'gain',
+  isMale: boolean = true,
+  target_weight_kg?: number,
+): CalorieBreakdown {
+  const calcWeight = (goal !== 'maintain' && target_weight_kg) ? target_weight_kg : current_weight_kg;
+  const bmr = calculateBMR(calcWeight, height_cm, age, isMale);
+  const tdee = bmr * ACTIVITY_FACTOR;
+  const currentBmr = calculateBMR(current_weight_kg, height_cm, age, isMale);
+  const currentTdee = currentBmr * ACTIVITY_FACTOR;
+  return {
+    bmr: Math.round(bmr),
+    tdee: Math.round(tdee),
+    current_tdee: Math.round(currentTdee),
+    result: Math.round(tdee),
+    isMale,
+    current_weight_kg,
+    target_weight_kg,
+    calc_weight_kg: calcWeight,
+    height_cm,
+    age,
+    goal,
+  };
+}
+
 // 식사 유형 한국어 라벨
 export const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: '아침',

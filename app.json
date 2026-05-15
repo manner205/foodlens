@@ -32,8 +32,21 @@
     "plugins": [
       "expo-router"
     ],
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6fa96dde-c7b8-40f5-a3c7-aa9eacd3bd4b"
+    },
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6fa96dde-c7b8-40f5-a3c7-aa9eacd3bd4b"
+      }
+    },
+    "owner": "manner205"
   }
 }

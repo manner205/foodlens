@@ -3,7 +3,7 @@
 import { useAuthContext } from '@/app/_layout';
 import { AvatarDisplay } from '@/components/AvatarDisplay';
 import { Text, View } from '@/components/Themed';
-import { calculateDailyCalories } from '@/constants/nutrition';
+import { CalorieBreakdown, calculateDailyCaloriesWithBreakdown } from '@/constants/nutrition';
 import { pickFromGallery, takePhoto, uploadAvatar } from '@/services/imageService';
 import { BorderRadius, Colors, FontSize, Spacing } from '@/styles/theme';
 import { FontAwesome } from '@expo/vector-icons';
@@ -23,8 +23,12 @@ export default function ProfileScreen() {
   const [age, setAge] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [heightCm, setHeightCm] = useState('');
+  const [gender, setGender] = useState<'male' | 'female'>('male');
   const [goal, setGoal] = useState<'lose' | 'maintain' | 'gain'>('maintain');
+  const [targetWeightKg, setTargetWeightKg] = useState('');
   const [dailyCalorieGoal, setDailyCalorieGoal] = useState('');
+  const [breakdown, setBreakdown] = useState<CalorieBreakdown | null>(null);
+  const [showFormula, setShowFormula] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
@@ -36,7 +40,9 @@ export default function ProfileScreen() {
       setAge(user.age?.toString() || '');
       setWeightKg(user.weight_kg?.toString() || '');
       setHeightCm(user.height_cm?.toString() || '');
+      setGender(user.gender || 'male');
       setGoal(user.goal || 'maintain');
+      setTargetWeightKg(user.target_weight_kg?.toString() || '');
       setDailyCalorieGoal(user.daily_calorie_goal?.toString() || '');
       setAvatarUrl(user.avatar_url);
     } else if (session && !retried.current) {
@@ -106,7 +112,15 @@ export default function ProfileScreen() {
       Alert.alert('알림', '나이, 체중, 키를 먼저 입력해주세요.');
       return;
     }
-    setDailyCalorieGoal(calculateDailyCalories(w, h, a, goal).toString());
+    const tw = goal !== 'maintain' ? (parseFloat(targetWeightKg) || undefined) : undefined;
+    if (goal !== 'maintain' && !tw) {
+      Alert.alert('알림', '목표 체중을 입력해주세요.');
+      return;
+    }
+    const bd = calculateDailyCaloriesWithBreakdown(w, h, a, goal, gender === 'male', tw);
+    setDailyCalorieGoal(bd.result.toString());
+    setBreakdown(bd);
+    setShowFormula(false);
   };
 
   const handleSave = async () => {
@@ -118,11 +132,13 @@ export default function ProfileScreen() {
           age: parseInt(age) || undefined,
           weight_kg: parseFloat(weightKg) || undefined,
           height_cm: parseInt(heightCm) || undefined,
+          gender,
           goal,
+          target_weight_kg: goal !== 'maintain' ? (parseFloat(targetWeightKg) || undefined) : undefined,
           daily_calorie_goal: parseInt(dailyCalorieGoal) || undefined,
         }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('요청 시간 초과 (10초). 네트워크를 확인하세요.')), 10000)
+          setTimeout(() => reject(new Error('요청 시간 초과 (30초). 네트워크를 확인하세요.')), 30000)
         ),
       ]);
       Alert.alert('완료', '프로필이 저장되었습니다.');
@@ -210,6 +226,23 @@ export default function ProfileScreen() {
           />
         </View>
 
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>성별</Text>
+          <View style={styles.goalRow}>
+            {([{ key: 'male', label: '남성' }, { key: 'female', label: '여성' }] as const).map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.goalButton, gender === opt.key && styles.goalButtonActive]}
+                onPress={() => setGender(opt.key)}
+              >
+                <Text style={[styles.goalText, gender === opt.key && styles.goalTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         <View style={styles.rowFields}>
           <View style={[styles.fieldGroup, { flex: 1, marginRight: Spacing.sm }]}>
             <Text style={styles.label}>나이</Text>
@@ -264,6 +297,20 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {goal !== 'maintain' && (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>목표 체중 (kg)</Text>
+            <TextInput
+              style={styles.input}
+              value={targetWeightKg}
+              onChangeText={setTargetWeightKg}
+              placeholder={goal === 'lose' ? '현재보다 낮은 체중' : '현재보다 높은 체중'}
+              keyboardType="decimal-pad"
+              placeholderTextColor={Colors.textLight}
+            />
+          </View>
+        )}
+
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>일일 칼로리 목표 (kcal)</Text>
           <View style={styles.calorieRow}>
@@ -279,6 +326,62 @@ export default function ProfileScreen() {
               <Text style={styles.autoButtonText}>자동계산</Text>
             </TouchableOpacity>
           </View>
+
+          {breakdown && (
+            <View style={styles.breakdownBox}>
+              <Text style={styles.breakdownSummary}>
+                {breakdown.goal !== 'maintain' && breakdown.target_weight_kg
+                  ? `목표 ${breakdown.target_weight_kg}kg 기준  `
+                  : '현재 체중 기준  '}
+                BMR {breakdown.bmr} × 1.55 = {breakdown.result} kcal
+              </Text>
+              {breakdown.goal !== 'maintain' && breakdown.target_weight_kg && (
+                <Text style={styles.breakdownDiff}>
+                  현재 체중 유지 {breakdown.current_tdee} kcal 대비{' '}
+                  {breakdown.result < breakdown.current_tdee
+                    ? `−${breakdown.current_tdee - breakdown.result}`
+                    : `+${breakdown.result - breakdown.current_tdee}`} kcal
+                </Text>
+              )}
+              <TouchableOpacity
+                style={styles.formulaToggle}
+                onPress={() => setShowFormula(v => !v)}
+              >
+                <Text style={styles.formulaToggleText}>
+                  {showFormula ? '▲ 공식 접기' : '▼ 계산 공식 보기'}
+                </Text>
+              </TouchableOpacity>
+              {showFormula && (
+                <View style={styles.formulaBox}>
+                  <Text style={styles.formulaTitle}>
+                    ① BMR (기초대사량) — Mifflin-St Jeor
+                    {breakdown.goal !== 'maintain' && breakdown.target_weight_kg
+                      ? `  [목표 ${breakdown.target_weight_kg}kg 기준]`
+                      : ''}
+                  </Text>
+                  <Text style={styles.formulaLine}>
+                    {breakdown.isMale
+                      ? `10×${breakdown.calc_weight_kg} + 6.25×${breakdown.height_cm} - 5×${breakdown.age} + 5`
+                      : `10×${breakdown.calc_weight_kg} + 6.25×${breakdown.height_cm} - 5×${breakdown.age} - 161`
+                    } = {breakdown.bmr} kcal
+                  </Text>
+                  <Text style={styles.formulaTitle}>② TDEE (총 소모 칼로리)</Text>
+                  <Text style={styles.formulaLine}>
+                    BMR {breakdown.bmr} × 활동계수 1.55 = {breakdown.tdee} kcal
+                  </Text>
+                  <Text style={styles.formulaTitle}>③ 목표 보정 방식</Text>
+                  <Text style={styles.formulaLine}>
+                    {breakdown.goal === 'maintain'
+                      ? '현재 체중 유지 → TDEE 그대로 적용'
+                      : breakdown.goal === 'lose'
+                        ? `목표 체중(${breakdown.target_weight_kg}kg) 기준 유지 칼로리로 설정\n→ 현재보다 적게 먹어 자연스럽게 감량`
+                        : `목표 체중(${breakdown.target_weight_kg}kg) 기준 유지 칼로리로 설정\n→ 현재보다 더 먹어 자연스럽게 증량`
+                    }
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         <TouchableOpacity
@@ -347,6 +450,14 @@ const styles = StyleSheet.create({
   calorieRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
   autoButton: { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.sm },
   autoButtonText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '600' },
+  breakdownBox: { marginTop: Spacing.sm, backgroundColor: Colors.background, borderRadius: BorderRadius.sm, padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  breakdownSummary: { fontSize: FontSize.sm, color: Colors.text, fontWeight: '600', marginBottom: 2 },
+  breakdownDiff: { fontSize: FontSize.xs, color: Colors.textSecondary, marginBottom: 4 },
+  formulaToggle: { alignSelf: 'flex-start', marginTop: 2 },
+  formulaToggleText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: '600' },
+  formulaBox: { marginTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.sm, gap: 4 },
+  formulaTitle: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary, marginTop: 4 },
+  formulaLine: { fontSize: FontSize.xs, color: Colors.text, lineHeight: 18 },
   saveButton: { flexDirection: 'row', backgroundColor: Colors.primary, borderRadius: BorderRadius.md, padding: Spacing.md, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.sm },
   saveButtonText: { color: '#fff', fontSize: FontSize.md, fontWeight: '700' },
 
