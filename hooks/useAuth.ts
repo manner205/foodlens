@@ -1,5 +1,4 @@
 // hooks/useAuth.ts
-// 2026-05-12: 인증 상태 관리 훅
 
 import { supabase } from '@/services/supabaseClient';
 import { User } from '@/types/models';
@@ -11,51 +10,107 @@ export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  // 포그라운드 복귀 + 인증 갱신 완료 시점을 알리는 타임스탬프
-  // 0 = 아직 초기화 전, 그 외 = Date.now() 값
   const [lastRefreshTime, setLastRefreshTime] = useState(0);
   const prevAppState = useRef<AppStateStatus>('active');
 
-  useEffect(() => {
-    console.log('[Auth] init: getSession 시작');
-    const timeout = setTimeout(() => {
-      console.warn('[Auth] init: 5초 타임아웃 — loading 강제 해제');
-      setLoading(false);
-    }, 5000);
+  // fetchUserProfile을 useCallback으로 안정화 — useEffect 의존성으로 안전하게 사용하기 위함
+  const fetchUserProfile = useCallback(async (userId: string, email?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('fl_users')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      clearTimeout(timeout);
-      console.log('[Auth] init: session 존재=', !!session, '/ userId=', session?.user?.id ?? 'none');
-      setSession(session);
-      if (session?.user) {
-        fetchUserProfile(session.user.id, session.user.email ?? undefined);
-      } else {
+      if (error && error.code === 'PGRST116') {
+        const { data: newUser, error: insertError } = await supabase
+          .from('fl_users')
+          .insert({ id: userId, email: email || '' })
+          .select()
+          .single();
+
+        if (!insertError && newUser) setUser(newUser);
+      } else if (data) {
+        setUser(data);
+      } else if (error) {
+        console.error('[Auth] 프로필 조회 오류:', JSON.stringify(error));
+      }
+    } catch (err) {
+      console.error('[Auth] 프로필 조회 예외:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // onAuthStateChange만 사용 — getSession() 중복 호출로 인한 race condition 제거
+  useEffect(() => {
+    let mounted = true;
+
+    // 타임아웃: 네트워크 장애 등으로 초기화가 15초 이상 지연될 경우 fallback
+    const timeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('[Auth] 15초 타임아웃 — loading 강제 해제');
         setLoading(false);
       }
-    }).catch((err) => {
-      clearTimeout(timeout);
-      console.error('[Auth] init: getSession 실패', err);
-      setLoading(false);
-    });
+    }, 15000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        console.log('[Auth] onAuthStateChange event=', _event, '/ userId=', newSession?.user?.id ?? 'none');
+      async (event, newSession) => {
+        if (!mounted) return;
+
+        const expiresAt = newSession?.expires_at
+          ? new Date(newSession.expires_at * 1000).toLocaleTimeString('ko-KR')
+          : 'none';
+        console.log('[Auth] event=', event, '/ userId=', newSession?.user?.id ?? 'none', '/ expires=', expiresAt);
+
+        if (event === 'SIGNED_OUT') {
+          clearTimeout(timeout);
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (!newSession) {
+          // INITIAL_SESSION에 세션이 없는 경우 (미로그인 또는 세션 파기)
+          clearTimeout(timeout);
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        // 유효한 세션 (INITIAL_SESSION valid / TOKEN_REFRESHED / SIGNED_IN)
+        clearTimeout(timeout);
         setSession(newSession);
-        if (newSession?.user) {
+        if (newSession.user) {
           await fetchUserProfile(newSession.user.id, newSession.user.email ?? undefined);
         } else {
-          setUser(null);
           setLoading(false);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
+  }, [fetchUserProfile]);
+
+  // 세션은 있는데 user가 null인 경우 재시도 (QR 진입 시 순간 네트워크 오류 대응)
+  // loading이 false가 된 뒤에도 user가 없으면 2초 후 자동 재시도
+  useEffect(() => {
+    if (!loading && session?.user && !user) {
+      console.log('[Auth] 세션 있으나 user 없음 — 2초 후 프로필 재조회');
+      const retryTimer = setTimeout(() => {
+        fetchUserProfile(session.user!.id, session.user!.email ?? undefined);
+      }, 2000);
+      return () => clearTimeout(retryTimer);
+    }
+  }, [loading, session?.user?.id, user, fetchUserProfile]);
 
   // 앱이 포그라운드로 돌아올 때 세션 강제 갱신 후 lastRefreshTime 업데이트
-  // index.tsx 등 화면에서 lastRefreshTime 변화를 감지해 데이터 재로드
   useEffect(() => {
     const appStateSub = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active' && prevAppState.current !== 'active') {
@@ -88,44 +143,14 @@ export function useAuth() {
       prevAppState.current = nextState;
     });
     return () => appStateSub.remove();
-  }, []);
+  }, [fetchUserProfile]);
 
-  // email 파라미터로 직접 받아 stale session 클로저 버그 방지
-  const fetchUserProfile = async (userId: string, email?: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('fl_users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error && error.code === 'PGRST116') {
-        const { data: newUser, error: insertError } = await supabase
-          .from('fl_users')
-          .insert({ id: userId, email: email || '' })
-          .select()
-          .single();
-
-        if (!insertError && newUser) setUser(newUser);
-      } else if (data) {
-        setUser(data);
-      } else if (error) {
-        console.error('프로필 조회 오류:', error);
-      }
-    } catch (error) {
-      console.error('프로필 조회 실패:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 프로필만 다시 로드 (세션은 유지한 채 user가 null일 때 호출)
   const refetchProfile = useCallback(async () => {
     const { data: { session: current } } = await supabase.auth.getSession();
     if (current?.user) {
       await fetchUserProfile(current.user.id, current.user.email ?? undefined);
     }
-  }, []);
+  }, [fetchUserProfile]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -133,7 +158,6 @@ export function useAuth() {
   };
 
   const signOut = async () => {
-    // 로컬 상태 먼저 초기화 — 네트워크 실패해도 로그아웃 보장
     setSession(null);
     setUser(null);
     try {

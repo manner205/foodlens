@@ -208,6 +208,52 @@ FoodLens/
 
 ---
 
+### 2026-05-16 (Day 5) — QR 코드 접속 시 로그인 풀림 현상 근본 수정
+
+#### 문제 현상
+- Expo Go QR 코드로 앱 진입 시 "안녕하세요 👋" (비로그인 UI) + 0 데이터 표시
+- 앱을 끄고 다시 켜면 (포그라운드 복귀) 정상 표시
+- 30분 이상 유휴 후 QR 재접속 시 재현 (이전 AppState 수정으로도 해결 안 됨)
+
+#### 근본 원인 분석 (Supabase auth-js 2.105.4 소스코드 직접 분석)
+
+**원인 1: `fetchUserProfile` 실패 + 재시도 없음 (주 원인)**
+- QR 진입 시 WiFi가 30분 이상 유휴 상태에서 깨어나면서 첫 Supabase DB 쿼리가 순간 네트워크 오류로 실패
+- 토큰은 만료되지 않음 (Supabase 기본 JWT TTL = 1시간, 30분이면 아직 유효)
+- 실패 후 재시도 로직이 전혀 없어 `user = null`, `loading = false`로 영구 고착
+
+**원인 2: `getSession()` + `onAuthStateChange` 이중 호출 race condition (부 원인)**
+- `getSession()`과 `onAuthStateChange` 두 경로가 동시에 `fetchUserProfile()`을 호출
+- Supabase 내부적으로 두 호출이 `_acquireLock`으로 직렬화되지만, 실패한 쪽이 성공한 쪽보다 나중에 완료되는 경우 상태 역전 가능
+
+**왜 끄고 다시 켜면 되는가?**
+- AppState `active` 이벤트 → `getSession()` + `fetchUserProfile()` 재실행
+- 포그라운드 복귀 시점에는 네트워크가 이미 안정화 → 성공
+
+#### 수정 내용 (`hooks/useAuth.ts`)
+
+| 변경 | 내용 |
+|------|------|
+| `getSession()` 초기 호출 **제거** | `onAuthStateChange`만 사용하여 중복 호출 및 race condition 완전 제거 |
+| `fetchUserProfile` → `useCallback(fn, [])` | `useEffect` 의존성 배열에서 안정적으로 참조 가능 |
+| **재시도 `useEffect` 추가** | `!loading && session?.user && !user` 조건 감지 → 2초 후 자동 재조회 |
+| 타임아웃 **5초 → 15초** | 느린 네트워크에서도 충분한 초기화 시간 확보 |
+
+```
+[정상 흐름 - 수정 후]
+QR 진입 → INITIAL_SESSION 발화 → fetchUserProfile 실패 (순간 오류)
+  → user=null, loading=false → "안녕하세요" 잠깐 표시
+  → 2초 후 재시도 → 네트워크 안정 → 성공
+  → user=profile → "매너리아 님, 안녕하세요" 표시 ✅
+```
+
+#### 기술 메모
+- Supabase `onAuthStateChange`의 `INITIAL_SESSION` 이벤트는 `_recoverAndRefresh()` 완료 후 발화
+- 토큰 갱신 실패(네트워크 오류, `isAuthRetryableFetchError = true`)시 만료 세션이 AsyncStorage에 유지되고 30초마다 자동 재시도
+- `EXPIRY_MARGIN_MS = 90,000ms` (90초): 만료 90초 전부터 갱신 시도
+
+---
+
 ## 다른 컴퓨터에서 이어서 개발하기
 
 ### 방법 1: USB로 프로젝트 복사 (권장)
@@ -276,3 +322,5 @@ EXPO_PUBLIC_GEMINI_API_KEY=(Google AI Studio에서 발급한 키)
 - PieChart 주의: `hasLegend={false}` + 전체 너비 사용 시 클리핑 없음. 좁은 너비(`SW/2`)에서는 세로 스택 레이아웃 필요
 - iOS 백그라운드: JS 스레드 일시 중단으로 Supabase 토큰 갱신 타이머 멈춤 → AppState `'active'` 이벤트에서 `getSession()` 강제 호출로 해결
 - Supabase Storage upsert: `upsert: true` 옵션은 UPDATE 정책 필요 → DELETE 후 INSERT 방식 권장
+- **QR 진입 로그인 풀림**: `getSession()` + `onAuthStateChange` 동시 사용 금지 (race condition) → `onAuthStateChange`만 사용. `fetchUserProfile` 실패 시 2초 후 자동 재시도 useEffect로 해결 (`!loading && session?.user && !user` 조건 감지)
+- Supabase auth-js 2.x 내부 동작: `onAuthStateChange` 등록 시 `initializePromise` 대기 후 `_emitInitialSession()` → `_useSession()` → `__loadSession()` 순으로 실행. 토큰 만료 시 내부적으로 `_callRefreshToken()` 호출 후 `INITIAL_SESSION` 발화
